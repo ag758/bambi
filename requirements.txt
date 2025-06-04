@@ -1,0 +1,11 @@
+# Screenshot capture
+mss==10.0.0
+
+# Image processing / pre-processing images for LLMS
+Pillow==10.4.0
+
+# LLM interaction (Ollama API)
+requests==2.32.3
+
+# Other utilities
+python-dotenv==1.0.1
