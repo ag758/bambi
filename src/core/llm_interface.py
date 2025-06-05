@@ -2,7 +2,8 @@ import requests
 import base64
 import os
 from src.core.config import AppConfig
-import json # Ensure json is imported for parsing Ollama stream
+from PIL import Image # Import Pillow
+import io
 
 class LLMInterface:
     def __init__(self, host=AppConfig.OLLAMA_HOST, model=AppConfig.OLLAMA_MODEL):
@@ -11,80 +12,102 @@ class LLMInterface:
         self.api_url = AppConfig.get_ollama_api_url("generate")
         self.pull_url = AppConfig.get_ollama_api_url("pull")
         self.tags_url = AppConfig.get_ollama_api_url("tags")
-
-    def _check_ollama_status(self):
+        self.max_image_dim = 1000
+        
+    def _resize_image(self, image_path, max_dim):
+        """
+        Resizes an image to have its longest side no more than `max_dim`,
+        maintaining aspect ratio, and returns it as bytes.
+        Handles RGBA to RGB conversion for JPEG saving.
+        """
         try:
-            response = requests.get(self.tags_url, timeout=5)
-            response.raise_for_status()
-            return True
-        except requests.exceptions.ConnectionError:
-            return False
+            img = Image.open(image_path)
+            original_width, original_height = img.size
+            print(f"Original image resolution: {original_width}x{original_height}")
+
+            # --- NEW: Convert to RGB if the image is RGBA ---
+            if img.mode == 'RGBA':
+                # Create a new blank RGB image with a white background
+                # and paste the RGBA image onto it.
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[3]) # Use the alpha channel as a mask
+                img = background
+                print("Converted RGBA image to RGB for JPEG saving.")
+            # --- END NEW ---
+
+            if max(original_width, original_height) > max_dim:
+                img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+                print(f"Resized image resolution: {img.width}x{img.height}")
+            else:
+                print("Image resolution is already within limits, no resizing needed.")
+
+            # Convert image to bytes in JPEG format for Ollama
+            buffered = io.BytesIO()
+            img.save(buffered, format="JPEG") # This line will now work correctly for RGB images
+            return buffered.getvalue()
         except Exception as e:
-            print(f"Error checking Ollama status: {e}")
-            return False
-
-    def _pull_model(self):
-        print(f"Attempting to download model: {self.model}. This may take a while...")
-        headers = {'Content-Type': 'application/json'}
-        data = {"name": self.model, "stream": True}
-        try:
-            with requests.post(self.pull_url, headers=headers, json=data, stream=True) as r:
-                r.raise_for_status()
-                for chunk in r.iter_content(chunk_size=None):
-                    for line in chunk.decode('utf-8').splitlines():
-                        if line.strip():
-                            try:
-                                progress = json.loads(line)
-                                if 'total' in progress and 'completed' in progress:
-                                    percent = progress['completed'] / progress['total']
-                                    print(f"\rDownloading {self.model}: {percent:.2%}", end="", flush=True)
-                                elif 'status' in progress:
-                                    print(f"\rStatus: {progress['status']}", end="", flush=True)
-                            except json.JSONDecodeError:
-                                # Sometimes status messages aren't perfect JSON, or lines are incomplete
-                                continue
-            print(f"\nModel {self.model} downloaded successfully.")
-            return True
-        except requests.exceptions.RequestException as e:
-            print(f"\nFailed to download {self.model}: {e}")
-            return False
+            print(f"Error resizing image: {e}")
+            # Fallback: if resize fails, try to return original image bytes
+            # Note: This fallback might still fail if the original image is RGBA and you try to base64 encode it for an API expecting JPEG/PNG
+            try:
+                with open(image_path, "rb") as f:
+                    return f.read()
+            except Exception as read_error:
+                print(f"Also failed to read original image bytes: {read_error}")
+                return None # Or raise an error, depending on desired behavior
 
     def get_llm_response(self, image_path, user_query):
+
+        if not user_query:
+            user_query = """
+            You are an expert AI assistant whose purpose is to help the user understand their current screen and guide them on their task.
+
+            Based *STRICTLY* on **ONLY** the visible text and visual information in this image:
+            Do NOT invent or infer any details not directly shown. If a piece of requested information is not visible or not relevant to the screen's main purpose, explicitly state 'Not applicable/Not visible'.
+
+            1.  Speak directly to the user (e.g., "It looks like you are currently viewing a product page," or "It appears you are setting up a new account"). Clearly state what the main goal or context of the screen is.
+            2.  * Identify the main context or purpose of the screen (e.g., "Invoice viewing page," "Software installation wizard," "Shopping cart").
+                * Extract all prominent textual labels, numerical data, and important phrases relevant to the screen's purpose.
+                * List any identified interactive elements (buttons, links, input fields, dropdowns, checkboxes, etc.) and their visible text.
+            3.  If there are visible empty input areas or fields requiring user entry, suggest examples of input that would fit based on their labels or context.
+            4.  Suggest next steps for the user to make progress in the main context or purpose. These steps must be directly inferable from the visible UI elements (e.g., clicking a specific button, typing into a field, selecting an option). 
+            Guide the user on how to progress with the task depicted on the screen.
+
+            Ensure your entire response is clear, concise, highly actionable, and speaks directly to the user.
+            """
+
         """
         Sends the screenshot (as base64) and user query to the local multimodal LLM.
         The LLM is expected to perform the OCR-like understanding internally.
         """
-        if not self._check_ollama_status():
-            print("Ollama server is not running. Please start Ollama or install it from ollama.com/download")
-            if not self._pull_model():
-                return "Failed to get LLM model. Please check your Ollama installation and network."
-            else:
-                # After successful pull, check status again to confirm model is ready
-                # This might not be strictly necessary if pull was successful, but adds robustness
-                if not self._check_ollama_status():
-                    return "Ollama started, but model still not available. Try again or check Ollama logs."
-                print("Ollama is now running and model should be ready.")
 
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image not found at: {image_path}")
 
-        with open(image_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
+        # Resize the image and get its bytes
+        image_bytes = self._resize_image(image_path, self.max_image_dim)
+        encoded_image = base64.b64encode(image_bytes).decode('utf-8')
 
         # The prompt is now simpler, as the LLM directly interprets the image
         # You can prompt it more generally or ask it to describe visible text.
         prompt = f"USER: <image>\nBased on this screen, '{user_query}'\nASSISTANT:"
 
+        print("\nModel: ", self.model)
+        print("\nPrompt: ", prompt)
+
         payload = {
             "model": self.model,
             "prompt": prompt,
-            "images": [image_data],
+            "images": [encoded_image],
             "stream": False
         }
 
         headers = {'Content-Type': 'application/json'}
 
         try:
+            print("\nAPI URL: ", self.api_url)
+            print("\nAPI Headers: ", headers)
+            # print("\nPayload: ", payload)
             response = requests.post(self.api_url, headers=headers, json=payload, timeout=300)
             response.raise_for_status()
             result = response.json()
@@ -97,21 +120,3 @@ class LLMInterface:
             return f"Error communicating with Ollama: {e}"
         except Exception as e:
             return f"An unexpected error occurred: {e}"
-
-# Example usage (for testing)
-if __name__ == "__main__":
-    from src.core.screenshot_capture import ScreenshotCapture
-    import os
-
-    screenshot_tool = ScreenshotCapture()
-    test_screenshot_path = screenshot_tool.take_screenshot(filename="llm_test_screenshot_no_ocr.png")
-
-    llm_tool = LLMInterface()
-    user_q = "What is the primary content on this screen and what can I do with it? Describe any visible text."
-    print(f"\nAsking LLM: '{user_q}'")
-    # Corrected call: only image_path and user_query
-    llm_response = llm_tool.get_llm_response(test_screenshot_path, user_q)
-    print("\nLLM Response:\n", llm_response)
-
-    if os.path.exists(test_screenshot_path):
-        os.remove(test_screenshot_path)

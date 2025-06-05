@@ -12,6 +12,8 @@ def main():
     parser.add_argument(
         "query",
         type=str,
+        nargs='?',
+        default=None,
         help="Your question about the current screen content."
     )
     # Removed --no-ocr flag as OCR is handled by the VLM inherently
