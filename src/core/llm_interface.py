@@ -14,18 +14,17 @@ class LLMInterface:
         self.tags_url = AppConfig.get_ollama_api_url("tags")
         self.max_image_dim = 1500
         
-    def _resize_image(self, image_path, max_dim):
+    def _resize_image(self, image_path, max_dim): # max_dim will no longer be used for resizing
         """
-        Resizes an image to have its longest side no more than `max_dim`,
-        maintaining aspect ratio, and returns it as bytes.
-        Handles RGBA to RGB conversion for JPEG saving.
+        Processes an image, handling RGBA to RGB conversion for JPEG saving,
+        and returns it as bytes. This function does NOT resize the image.
         """
         try:
             img = Image.open(image_path)
             original_width, original_height = img.size
             print(f"Original image resolution: {original_width}x{original_height}")
 
-            # --- NEW: Convert to RGB if the image is RGBA ---
+            # --- Convert to RGB if the image is RGBA ---
             if img.mode == 'RGBA':
                 # Create a new blank RGB image with a white background
                 # and paste the RGBA image onto it.
@@ -33,22 +32,20 @@ class LLMInterface:
                 background.paste(img, mask=img.split()[3]) # Use the alpha channel as a mask
                 img = background
                 print("Converted RGBA image to RGB for JPEG saving.")
-            # --- END NEW ---
-
-            if max(original_width, original_height) > max_dim:
-                img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
-                print(f"Resized image resolution: {img.width}x{img.height}")
             else:
-                print("Image resolution is already within limits, no resizing needed.")
+                print("Image is already RGB or non-RGBA, no conversion needed.")
+
+            # The image size is intentionally not changed.
+            # The 'max_dim' parameter is now redundant for its original purpose.
+            print("Image size will not be changed as per requirement.")
 
             # Convert image to bytes in JPEG format for Ollama
             buffered = io.BytesIO()
-            img.save(buffered, format="JPEG") # This line will now work correctly for RGB images
+            img.save(buffered, format="JPEG")
             return buffered.getvalue()
         except Exception as e:
-            print(f"Error resizing image: {e}")
-            # Fallback: if resize fails, try to return original image bytes
-            # Note: This fallback might still fail if the original image is RGBA and you try to base64 encode it for an API expecting JPEG/PNG
+            print(f"Error processing image: {e}")
+            # Fallback: if processing fails, try to return original image bytes
             try:
                 with open(image_path, "rb") as f:
                     return f.read()
@@ -101,6 +98,7 @@ class LLMInterface:
             * **Tone:** Speak directly to the user. Be helpful, clear, and concise.
             * **Seamless Output:** Your final response should flow as a single, natural piece of text.
             * **DO NOT MENTION THE DIRECTIVES:** Your response must **NOT** contain the words "Primary Directive," "Guidance Directive," "Creative Directive," or any mention of "Step 1," "Step 2," or "Step 3." These are instructions for you, not for the user.
+            ** DO NOT MENTION YOUR LIMITATIONS AS AN AI MODEL OR ASK THE USER FOR ADDITIONAL INPUT: **
             * **Source:** Your description (Step 1) and guidance (Step 2) must be based strictly on what is visible in the screenshot.
             * **Format:** Use Markdown for clarity (bolding for UI elements, code blocks for code) as needed.
             """
