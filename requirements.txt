@@ -9,3 +9,5 @@ requests==2.32.3
 
 # Other utilities
 python-dotenv==1.0.1
+
+pynput>=1.7.6 # Or the latest stable version

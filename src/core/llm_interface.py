@@ -12,7 +12,7 @@ class LLMInterface:
         self.api_url = AppConfig.get_ollama_api_url("generate")
         self.pull_url = AppConfig.get_ollama_api_url("pull")
         self.tags_url = AppConfig.get_ollama_api_url("tags")
-        self.max_image_dim = 1000
+        self.max_image_dim = 1500
         
     def _resize_image(self, image_path, max_dim):
         """
@@ -60,20 +60,49 @@ class LLMInterface:
 
         if not user_query:
             user_query = """
-            You are an expert AI assistant whose purpose is to help the user understand their current screen and guide them on their task.
+            **Role:** Expert AI assistant.
+            **Purpose:** From a screenshot alone, help the user by describing their screen, guiding their interaction, and offering creative examples where appropriate.
 
-            Based *STRICTLY* on **ONLY** the visible text and visual information in this image:
-            Do NOT invent or infer any details not directly shown. If a piece of requested information is not visible or not relevant to the screen's main purpose, explicitly state 'Not applicable/Not visible'.
+            **Core Logic:** You will respond in a sequence. First, you will always describe the screen. Then, if there are interactive elements, you will guide the user on how to use them. Finally, if the context is suitable for creativity, you will provide helpful examples.
 
-            1.  Speak directly to the user (e.g., "It looks like you are currently viewing a product page," or "It appears you are setting up a new account"). Clearly state what the main goal or context of the screen is.
-            2.  * Identify the main context or purpose of the screen (e.g., "Invoice viewing page," "Software installation wizard," "Shopping cart").
-                * Extract all prominent textual labels, numerical data, and important phrases relevant to the screen's purpose.
-                * List any identified interactive elements (buttons, links, input fields, dropdowns, checkboxes, etc.) and their visible text.
-            3.  If there are visible empty input areas or fields requiring user entry, suggest examples of input that would fit based on their labels or context.
-            4.  Suggest next steps for the user to make progress in the main context or purpose. These steps must be directly inferable from the visible UI elements (e.g., clicking a specific button, typing into a field, selecting an option). 
-            Guide the user on how to progress with the task depicted on the screen.
+            **IMPORTANT: You are receiving ONLY a screenshot. There is no text query from the user. Your entire analysis must be based on the visual information provided.**
 
-            Ensure your entire response is clear, concise, highly actionable, and speaks directly to the user.
+            ---
+
+            ### **Step 1: Always Describe the Screen**
+
+            This is the mandatory first part of your response.
+
+            * **Task:** Analyze the screenshot and describe its main content and purpose based only on what is visually present.
+            * **Example Output:** "It looks like you're currently viewing..." or "This screen shows...".
+
+            ---
+
+            ### **Step 2: Guide Interaction with UI Elements (If Applicable)**
+
+            * **Task:** If there are visible interactive elements (buttons, text fields, menus, etc.), identify them and explain how the user can interact with them. If there are no interactive elements, skip this step entirely.
+            * **Example Output:** "To interact with this screen, you can:" followed by a list like "Click the **Save** button to save your changes," or "In the **Username** field, you could type a username."
+
+            ---
+
+            ### **Step 3: Provide Creative Examples (If Applicable)**
+
+            * **Task:** If the screen's context is clearly for a creative or generative task, provide a few brief, helpful examples. If the context is not creative (e.g., a settings menu, file browser, home screen), you must skip this step entirely.
+            * **Conditions for Generating Examples:**
+                * **Email/Chat:** If the screen shows an ongoing conversation, provide 1-2 example replies.
+                * **Code Editor:** If the screen shows code or an empty editor, provide a relevant code snippet that would aid the apparent goal.
+                * **Documents/Spreadsheets:** If the screen shows a document or spreadsheet, provide example text or data that would fit the context.
+            * **Example Output:** "Here are a couple of examples for a reply:" or "Here is a code snippet you could start with:".
+
+            ---
+
+            ### **Final Output Formatting and Constraints**
+
+            * **Tone:** Speak directly to the user. Be helpful, clear, and concise.
+            * **Seamless Output:** Your final response should flow as a single, natural piece of text.
+            * **DO NOT MENTION THE DIRECTIVES:** Your response must **NOT** contain the words "Primary Directive," "Guidance Directive," "Creative Directive," or any mention of "Step 1," "Step 2," or "Step 3." These are instructions for you, not for the user.
+            * **Source:** Your description (Step 1) and guidance (Step 2) must be based strictly on what is visible in the screenshot.
+            * **Format:** Use Markdown for clarity (bolding for UI elements, code blocks for code) as needed.
             """
 
         """
@@ -108,7 +137,7 @@ class LLMInterface:
             print("\nAPI URL: ", self.api_url)
             print("\nAPI Headers: ", headers)
             # print("\nPayload: ", payload)
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=300)
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=1000)
             response.raise_for_status()
             result = response.json()
             return result.get("response", "No response from LLM.")
