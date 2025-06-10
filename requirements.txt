@@ -11,3 +11,6 @@ requests==2.32.3
 python-dotenv==1.0.1
 
 pynput>=1.7.6 # Or the latest stable version
+
+PyQt6==6.9.1
+markdown==3.8

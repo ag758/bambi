@@ -1,72 +1,57 @@
 import os
 import argparse
 from src.core.screenshot_capture import ScreenshotCapture
-# from src.core.ocr_processor import OCRProcessor # Removed as it's not used
 from src.core.llm_interface import LLMInterface
-from src.core.config import AppConfig
+from src.core.config import AppConfig # Assuming this is still used for configuration, though not explicitly in the main logic shown
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Local LLM Assistant for Screenshot Analysis."
-    )
-    parser.add_argument(
-        "query",
-        type=str,
-        nargs='?',
-        default=None,
-        help="Your question about the current screen content."
-    )
-    # Removed --no-ocr flag as OCR is handled by the VLM inherently
-    parser.add_argument(
-        "--keep-screenshot",
-        action="store_true",
-        help="Keep the screenshot file after processing."
-    )
-    parser.add_argument(
-        "--screenshot-path",
-        type=str,
-        help="Use a pre-existing screenshot file instead of taking a new one."
-    )
+class LLMAssistant:
+    def __init__(self):
+        """
+        Initializes the LLMAssistant with necessary tools.
+        """
+        self.screenshot_tool = ScreenshotCapture()
+        self.llm_interface = LLMInterface()
 
-    args = parser.parse_args()
+    def analyze_screen(self, query: str = None, keep_screenshot: bool = False, screenshot_path: str = None) -> str | None:
+        """
+        Captures a screenshot, analyzes it with an LLM, and returns the response.
 
-    # Initialize components
-    screenshot_tool = ScreenshotCapture()
-    # ocr_processor = OCRProcessor() # No longer needed, as VLM handles text
-    llm_interface = LLMInterface()
+        Args:
+            query (str, optional): Your question about the current screen content. Defaults to None.
+            keep_screenshot (bool, optional): Whether to keep the screenshot file after processing. Defaults to False.
+            screenshot_path (str, optional): Path to a pre-existing screenshot file. If provided, a new screenshot won't be taken. Defaults to None.
 
-    screenshot_file = None
-    try:
-        if args.screenshot_path:
-            screenshot_file = args.screenshot_path
-            if not os.path.exists(screenshot_file):
-                print(f"Error: Provided screenshot file not found at {screenshot_file}")
-                return
-            print(f"Using pre-existing screenshot: {screenshot_file}")
-        else:
-            print("Taking screenshot...")
-            screenshot_file = screenshot_tool.take_screenshot()
-            if not screenshot_file:
-                print("Failed to take screenshot. Exiting.")
-                return
+        Returns:
+            str | None: The LLM's response as a string, or None if an error occurred.
+        """
+        screenshot_file = None
+        response = None
+        try:
+            if screenshot_path:
+                screenshot_file = screenshot_path
+                if not os.path.exists(screenshot_file):
+                    print(f"Error: Provided screenshot file not found at {screenshot_file}")
+                    return None
+                print(f"Using pre-existing screenshot: {screenshot_file}")
+            else:
+                print("Taking screenshot...")
+                screenshot_file = self.screenshot_tool.take_screenshot()
+                if not screenshot_file:
+                    print("Failed to take screenshot. Exiting.")
+                    return None
 
-        # No separate OCR processing step needed here anymore
-        # extracted_text = "" # This variable is no longer needed
+            print("Sending to LLM for analysis...")
+            response = self.llm_interface.get_llm_response(screenshot_file, query)
+            print("\n--- LLM Response ---")
+            print(response)
+            print("--------------------")
 
-        print("Sending to LLM for analysis...")
-        # Call LLMInterface's get_llm_response with only image_path and user_query
-        response = llm_interface.get_llm_response(screenshot_file, args.query)
-        print("\n--- LLM Response ---")
-        print(response)
-        print("--------------------")
+            return response
 
-    finally:
-        if screenshot_file and not args.keep_screenshot and not args.screenshot_path:
-            try:
-                os.remove(screenshot_file)
-                print(f"Cleaned up temporary screenshot: {screenshot_file}")
-            except OSError as e:
-                print(f"Error cleaning up screenshot {screenshot_file}: {e}")
-
-if __name__ == "__main__":
-    main()
+        finally:
+            if screenshot_file and not keep_screenshot and not screenshot_path:
+                try:
+                    os.remove(screenshot_file)
+                    print(f"Cleaned up temporary screenshot: {screenshot_file}")
+                except OSError as e:
+                    print(f"Error cleaning up screenshot {screenshot_file}: {e}")
