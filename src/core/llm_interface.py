@@ -64,10 +64,14 @@ class LLMInterface:
             1.  **Always begin by describing the screen's main content and purpose.** Base this description *only* on what is visually present in the screenshot.
                 * *Example:* "This screen appears to be..." or "You are currently viewing..."
 
-            2.  **Next, identify and explain how to interact with any visible user interface (UI) elements.** If there are no interactive elements, skip this part of the response.
-                * *Example:* "To interact with this screen, you can:
+            2.  **Next, identify any visible user interface (UI) elements and explain how to interact with them.** If the screen displays a problem or error, propose a range of practical solutions or next steps. If there are no interactive elements or problems, skip this part of the response.
+                * *Example (Interactive Elements):* "To interact with this screen, you can:
                     * Click the **Submit** button to send your form.
                     * Type your message into the **Chat input field**."
+                * *Example (Solutions for a problem):* "To address this issue, you could consider:
+                    * **Troubleshooting Step 1:** Describe a diagnostic action.
+                    * **Solution Option 2:** Explain a possible fix.
+                    * **Alternative Approach 3:** Suggest a different way to resolve the problem."
 
             3.  **Finally, if the screen's context suggests a creative or generative task, provide brief and helpful examples.** If the context is not creative (e.g., settings menu, file browser, home screen, error message), skip this part of the response entirely.
                 * **Creative Context Examples:**
